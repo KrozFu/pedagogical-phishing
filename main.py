@@ -1,6 +1,8 @@
+import os
 import random
 import yagmail
-import os
+import http.server
+import socketserver
 from dotenv import load_dotenv
 
 # Definimos constantes
@@ -19,7 +21,7 @@ SALUDOS_Y_CUERPOS = {
 
             Hemos detectado actividad inusual en su cuenta. Para garantizar la seguridad de su información, por favor haga clic en el siguiente enlace y cambie su contraseña de inmediato:
 
-            [Enlace fraudulento]
+            <a href="{{ENLACE_FRAUDULENTO}}">Haga clic aquí para cambiar su contraseña</a>
 
             Gracias por su cooperación.
 
@@ -34,7 +36,7 @@ SALUDOS_Y_CUERPOS = {
 
             Hemos detectado actividad inusual en su cuenta. Para garantizar la seguridad de su información, por favor haga clic en el siguiente enlace y cambie su contraseña de inmediato:
 
-            [Enlace fraudulento]
+            <a href="{{ENLACE_FRAUDULENTO}}">Haga clic aquí para cambiar su contraseña</a>
 
             Gracias por su cooperación.
 
@@ -49,7 +51,7 @@ SALUDOS_Y_CUERPOS = {
 
             Hemos detectado actividad inusual en su cuenta. Para garantizar la seguridad de su información, por favor haga clic en el siguiente enlace y cambie su contraseña de inmediato:
 
-            [Enlace fraudulento]
+            <a href="{{ENLACE_FRAUDULENTO}}">Haga clic aquí para cambiar su contraseña</a>
 
             Gracias por su cooperación.
 
@@ -57,14 +59,14 @@ SALUDOS_Y_CUERPOS = {
             El equipo de soporte técnico
         """
     },
-    "Gmail": {
+   "Gmail": {
         "saludos": ["Estimado usuario Gmail", "Hola"],
         "cuerpo": """
             Estimado usuario Gmail,
 
             Hemos detectado actividad inusual en su cuenta. Para garantizar la seguridad de su información, por favor haga clic en el siguiente enlace y cambie su contraseña de inmediato:
 
-            [Enlace fraudulento]
+            <a href="{{ENLACE_FRAUDULENTO}}">Haga clic aquí para cambiar su contraseña</a>
 
             Gracias por su cooperación.
 
@@ -76,14 +78,37 @@ SALUDOS_Y_CUERPOS = {
 
 ASUNTO = "Urgente: Información de cuenta comprometida"
 
-def generar_correo(phishing_type):
+def generar_puerto_aleatorio():
+    # Generar un puerto aleatorio entre 8000 y 8999
+    return random.randint(8000, 8999)
+
+def generar_correo(phishing_type, puerto, archivo_html):
     if phishing_type in SALUDOS_Y_CUERPOS:
         datos = SALUDOS_Y_CUERPOS[phishing_type]
         saludo = random.choice(datos["saludos"])
         cuerpo = datos["cuerpo"].strip()
+        
+        # Reemplazar {{ENLACE_FRAUDULENTO}} por la URL del archivo HTML correspondiente
+        cuerpo = cuerpo.replace("{{ENLACE_FRAUDULENTO}}", f"http://localhost:{puerto}")
+        
         return saludo, ASUNTO, cuerpo
     else:
         raise ValueError("Tipo de phishing no válido")
+
+def levantar_servidor(archivo_html, puerto): 
+    # Definir el handler para servir archivos desde la carpeta src/templates
+    class MyHttpRequestHandler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=os.path.join(os.getcwd(), 'src', 'templates'), **kwargs)
+        
+        def do_GET(self):
+            # Sobreescribir el path para asegurar que siempre se sirva el archivo especificado
+            self.path = archivo_html
+            return super().do_GET()
+    
+    with socketserver.TCPServer(("", puerto), MyHttpRequestHandler) as httpd:
+        print(f"Servidor local iniciado en http://localhost:{puerto}")
+        httpd.serve_forever()
 
 def enviar_correo(destinatarios, asunto, cuerpo, remitente, contrasena):
     try:
@@ -119,7 +144,9 @@ def main():
     
     if tipo_phishing:
         try:
-            saludo, asunto, cuerpo = generar_correo(tipo_phishing)
+            archivo_html = f"{tipo_phishing.lower()}.html"
+            puerto = generar_puerto_aleatorio()
+            saludo, asunto, cuerpo = generar_correo(tipo_phishing, puerto, archivo_html)
             print("Enviando...")
 
             load_dotenv()
@@ -135,6 +162,8 @@ def main():
             
             if destinatarios:
                 enviar_correo(destinatarios, asunto, cuerpo, remitente, contrasena)
+                levantar_servidor(archivo_html, puerto)
+                
             else:
                 print("No se encontraron destinatarios válidos.")
         
